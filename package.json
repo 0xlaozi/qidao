@@ -1,0 +1,23 @@
+{
+  "dependencies": {
+    "@openzeppelin/contracts": "^2.4.0",
+    "@poanet/solidity-flattener": "^3.0.6",
+    "dotenv": "^8.2.0",
+    "global": "^4.4.0",
+    "hardhat": "^2.1.2",
+    "hardhat-typechain": "^0.3.5",
+    "truffle": "^5.2.6"
+  },
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@nomiclabs/hardhat-etherscan": "^2.1.1",
+    "@nomiclabs/hardhat-waffle": "^2.0.1",
+    "ethereum-waffle": "^3.3.0",
+    "ethers": "^5.0.32",
+    "ts-node": "^9.1.1",
+    "typescript": "^4.2.3"
+  },
+  "scripts": {
+    "deploy:mumbai": "hardhat run --network mumbai scripts/deploy-miMATIC.ts"
+  }
+}
