@@ -27,6 +27,8 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
     mapping(uint256 => uint256) public vaultCollateral;
     mapping(uint256 => uint256) public vaultDebt;
 
+    address public stabilityPool;
+
     event CreateVault(uint256 vaultID, address creator);
     event DestroyVault(uint256 vaultID);
     event TransferVault(uint256 vaultID, address from, address to);
@@ -49,6 +51,7 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
         closingFee=50; // 0.5%
         openingFee=0; // 0.0%
         ethPriceSource = PriceSource(ethPriceSourceAddress);
+        stabilityPool=address(0);
         tokenPeg = 100000000; // $1
         _minimumCollateralPercentage = minimumCollateralPercentage;
     }
@@ -189,15 +192,17 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
         uint256 _closingFee = (amount.mul(closingFee).mul(getTokenPriceSource())).div(getEthPriceSource().mul(10000));
 
         vaultDebt[vaultID] = vaultDebt[vaultID].sub(amount);
-        _burn(msg.sender, amount);
         vaultCollateral[vaultID]=vaultCollateral[vaultID].sub(_closingFee);
         vaultCollateral[treasury]=vaultCollateral[treasury].add(_closingFee);
+
+        _burn(msg.sender, amount);
 
         emit PayBackToken(vaultID, amount, _closingFee);
     }
 
     function buyRiskyVault(uint256 vaultID) external {
         require(vaultExistence[vaultID], "Vault does not exist");
+        require(stabilityPool==address(0) || msg.sender ==  stabilityPool, "buyRiskyVault disabled for public");
 
         (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(vaultCollateral[vaultID], vaultDebt[vaultID]);
 

@@ -34,6 +34,10 @@ contract QiStablecoin is Stablecoin, Ownable {
         tokenPeg = _tokenPeg;
     }
 
+    function setStabilityPool(address _pool) external onlyOwner() {
+        stabilityPool = _pool;
+    }
+
     function setDebtCeiling(uint256 amount) external onlyOwner() {
         require(totalSupply()<=amount, "setCeiling: Must be over the amount of outstanding debt.");
         debtCeiling = amount;
