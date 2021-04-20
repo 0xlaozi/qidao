@@ -80,7 +80,7 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
 
     function getEthPriceSource() public view returns (uint256){
         (,int price,,,) = ethPriceSource.latestRoundData();
-        return uint(price);
+        return uint256(price);
     }
 
     function calculateCollateralProperties(uint256 collateral, uint256 debt) private view returns (uint256, uint256) {
@@ -127,7 +127,7 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
     function destroyVault(uint256 vaultID) external onlyVaultOwner(vaultID) nonReentrant {
         require(vaultDebt[vaultID] == 0, "Vault has outstanding debt");
 
-        if(vaultCollateral[vaultID] >= 0) {
+        if(vaultCollateral[vaultID]) {
             msg.sender.transfer(vaultCollateral[vaultID]);
         }
 
