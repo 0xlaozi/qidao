@@ -4,3 +4,4 @@ typechain/**
 artifacts/**
 cache/**/**
 cache/solidity-files-cache.json
+.env
