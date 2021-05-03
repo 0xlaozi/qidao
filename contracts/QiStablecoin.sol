@@ -1,4 +1,4 @@
-pragma solidity ^0.5.0;
+pragma solidity 0.5.5;
 
 import "@openzeppelin/contracts/ownership/Ownable.sol";
 import "./Stablecoin.sol";
@@ -8,12 +8,14 @@ contract QiStablecoin is Stablecoin, Ownable {
         address ethPriceSourceAddress,
         uint256 minimumCollateralPercentage,
         string memory name,
-        string memory symbol
+        string memory symbol,
+        address vaultAddress
     ) Stablecoin(
         ethPriceSourceAddress,
         minimumCollateralPercentage,
         name,
-        symbol
+        symbol,
+        vaultAddress
     ) public {
         treasury=0;
     }

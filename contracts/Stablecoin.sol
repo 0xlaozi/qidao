@@ -1,4 +1,4 @@
-pragma solidity ^0.5.2;
+pragma solidity 0.5.5;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20Detailed.sol";
@@ -7,12 +7,16 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 
 import "./PriceSource.sol";
 
+import "./IMyVault.sol";
+
 contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
     PriceSource public ethPriceSource;
     
     using SafeMath for uint256;
 
     uint256 private _minimumCollateralPercentage;
+
+    IMyVault public erc721;
 
     uint256 public vaultCount;
     uint256 public debtCeiling;
@@ -36,13 +40,14 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
     event WithdrawCollateral(uint256 vaultID, uint256 amount);
     event BorrowToken(uint256 vaultID, uint256 amount);
     event PayBackToken(uint256 vaultID, uint256 amount, uint256 closingFee);
-    event BuyRiskyVault(uint256 vaultID, address owner, address buyer, uint256 amountPayed);
+    event BuyRiskyVault(uint256 vaultID, address owner, address buyer, uint256 amountPaid);
 
     constructor(
         address ethPriceSourceAddress,
         uint256 minimumCollateralPercentage,
         string memory name,
-        string memory symbol
+        string memory symbol,
+        address vaultAddress
     ) ERC20Detailed(name, symbol, 18) public {
         assert(ethPriceSourceAddress != address(0));
         assert(minimumCollateralPercentage != 0);
@@ -53,6 +58,8 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
         ethPriceSource = PriceSource(ethPriceSourceAddress);
         stabilityPool=address(0);
         tokenPeg = 100000000; // $1
+
+        erc721 = IMyVault(vaultAddress);
         _minimumCollateralPercentage = minimumCollateralPercentage;
     }
 
@@ -121,15 +128,23 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
 
         emit CreateVault(id, msg.sender);
 
+        // mint erc721 (vaultId)
+
+        erc721.mint(msg.sender,id);
+
         return id;
     }
 
     function destroyVault(uint256 vaultID) external onlyVaultOwner(vaultID) nonReentrant {
         require(vaultDebt[vaultID] == 0, "Vault has outstanding debt");
 
-        if(vaultCollateral[vaultID]) {
+        if(vaultCollateral[vaultID]!=0) {
             msg.sender.transfer(vaultCollateral[vaultID]);
         }
+
+        // burn erc721 (vaultId)
+
+        erc721.burn(vaultID);
 
         delete vaultExistence[vaultID];
         delete vaultOwner[vaultID];
@@ -141,6 +156,11 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
 
     function transferVault(uint256 vaultID, address to) external onlyVaultOwner(vaultID) {
         vaultOwner[vaultID] = to;
+
+        // burn erc721 (vaultId)
+        erc721.burn(vaultID);
+        // mint erc721 (vaultId)
+        erc721.mint(to,vaultID);
 
         emit TransferVault(vaultID, msg.sender, to);
     }
@@ -228,6 +248,11 @@ contract Stablecoin is ERC20, ERC20Detailed, ReentrancyGuard {
         vaultCollateral[treasury]=vaultCollateral[treasury].add(_closingFee);
         
         _burn(msg.sender, debtDifference);
+
+        // burn erc721 (vaultId)
+        erc721.burn(vaultID);
+        // mint erc721 (vaultId)
+        erc721.mint(msg.sender,vaultID);
 
         emit BuyRiskyVault(vaultID, previousOwner, msg.sender, debtDifference);
     }
