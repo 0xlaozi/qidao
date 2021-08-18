@@ -23,7 +23,7 @@ interface Uni {
 }
 
 // stake Token to earn more Token (from farming)
-contract camToken is ERC20, ERC20Detailed {
+contract camAave is ERC20, ERC20Detailed {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
@@ -37,19 +37,20 @@ contract camToken is ERC20, ERC20Detailed {
     
     address public operator;
 
-    address public usdc;
+    address public aave;
+    address public weth;
 
     uint16 public depositFeeBP;
 
     // Define the compounding aave market token contract
     constructor(address amToken, address underlying, string memory name, string memory symbol, uint8 decimals) ERC20Detailed(name, symbol, decimals) public {
 
-        Token=amToken; //amusdc
-        usdc=underlying;
+        Token=amToken; //amaave
+        aave=underlying;
 
         AaveContract = 0x357D51124f59836DeD84c8a1730D72B749d8BC23; // aave incentives controller
         wMatic = 0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270;
-
+        weth = 0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619;
         uni =  0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff; // quickswap
         treasury = 0x86fE8d6D4C8A007353617587988552B6921514Cb;
         depositFeeBP = 0;
@@ -132,9 +133,10 @@ contract camToken is ERC20, ERC20Detailed {
         uint256 _wmaticBalance = IERC20(wMatic).balanceOf(address(this));
 
         if(_wmaticBalance > 2) {
-            address[] memory path = new address[](2);
+            address[] memory path = new address[](3);
                 path[0] = wMatic;
-                path[1] = usdc;
+                path[1] = weth;
+                path[2] = aave;
     
             IERC20(wMatic).safeApprove(uni, 0);
             IERC20(wMatic).safeApprove(uni, _wmaticBalance);
@@ -142,14 +144,14 @@ contract camToken is ERC20, ERC20Detailed {
             // if successful this should increase the total MiMatic held by contract
             Uni(uni).swapExactTokensForTokens(_wmaticBalance, uint256(0), path, address(this), now.add(1800));
             
-            uint256 newBalance = IERC20(usdc).balanceOf(address(this));
+            uint256 newBalance = IERC20(aave).balanceOf(address(this));
 
             // Just being safe
-            IERC20(usdc).safeApprove(LENDING_POOL, 0);
-            // Approve Transfer _amount usdc to lending pool
-            IERC20(usdc).safeApprove(LENDING_POOL, newBalance);
+            IERC20(aave).safeApprove(LENDING_POOL, 0);
+            // Approve Transfer _amount aave to lending pool
+            IERC20(aave).safeApprove(LENDING_POOL, newBalance);
             // then we need to deposit it into the lending pool
-            ILendingPool(LENDING_POOL).deposit(usdc, newBalance, address(this), 0);
+            ILendingPool(LENDING_POOL).deposit(aave, newBalance, address(this), 0);
         }
     }
 
@@ -162,7 +164,7 @@ contract camToken is ERC20, ERC20Detailed {
             _burn(msg.sender, _share);
             
             // Now we withdraw the amToken from the camToken Pool and send to user as amToken.
-            //IERC20(usdc).safeApprove(address(this), amTokenAmount);
+            //IERC20(aave).safeApprove(address(this), amTokenAmount);
             IERC20(Token).transfer(msg.sender, amTokenAmount);
         }
     }
