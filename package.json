@@ -2,6 +2,7 @@
   "dependencies": {
     "@openzeppelin/contracts": "^2.5.0",
     "@poanet/solidity-flattener": "^3.0.6",
+    "chai": "^4.3.4",
     "dotenv": "^8.2.0",
     "global": "^4.4.0",
     "hardhat": "^2.1.2",
@@ -14,11 +15,13 @@
     "@nomiclabs/hardhat-waffle": "^2.0.1",
     "ethereum-waffle": "^3.3.0",
     "ethers": "^5.0.32",
+    "mocha": "^9.1.2",
     "ts-node": "^9.1.1",
     "typescript": "^4.2.3"
   },
   "scripts": {
     "deploy:mumbai": "hardhat run --network mumbai scripts/deploy-miMATIC.ts",
-    "deploy:mainnet": "hardhat run --network mainnet scripts/deploy-miMATIC.ts"
+    "deploy:mainnet": "hardhat run --network mainnet scripts/deploy-miMATIC.ts",
+    "test": "hardhat test --network hardhat"
   }
 }

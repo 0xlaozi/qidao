@@ -6,15 +6,15 @@ import "@openzeppelin/contracts/token/ERC20/ERC20Detailed.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
-import "../PriceSource.sol";
+import "../oracles/shareOracle.sol";
 
 import "../MyVaultV3.sol";
 
 contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
-    PriceSource public ethPriceSource;
-    
+    shareOracle public ethPriceSource;
+
     using SafeMath for uint256;
-    using SafeERC20 for ERC20Detailed;
+    using SafeERC20 for IERC20;
 
     uint256 public _minimumCollateralPercentage;
 
@@ -33,11 +33,11 @@ contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
 
     address public stabilityPool;
 
-    ERC20Detailed public collateral;
+    IERC20 public collateral;
 
-    ERC20Detailed public mai;
+    IERC20 public mai;
 
-    uint8 public priceSourceDecimals;
+    uint256 public collateralDecimals;
 
     event CreateVault(uint256 vaultID, address creator);
     event DestroyVault(uint256 vaultID);
@@ -62,10 +62,10 @@ contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
     ) VaultNFTv3(name, symbol, meta, baseURI) public {
         assert(ethPriceSourceAddress != address(0));
         assert(minimumCollateralPercentage != 0);
-                        //  | decimals start here
+        //  | decimals start here
         closingFee=50; // 0.5%
         openingFee=0; // 0.0%
-        ethPriceSource = PriceSource(ethPriceSourceAddress);
+        ethPriceSource = shareOracle(ethPriceSourceAddress);
         stabilityPool = address(0);
         tokenPeg = 100000000; // $1
 
@@ -74,9 +74,9 @@ contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
 
         _minimumCollateralPercentage = minimumCollateralPercentage;
 
-        collateral = ERC20Detailed(_collateral);
-        mai = ERC20Detailed(_mai);
-        priceSourceDecimals = ethPriceSource.decimals();
+        collateral = IERC20(_collateral);
+        mai = IERC20(_mai);
+        collateralDecimals = 8;
     }
 
     modifier onlyVaultOwner(uint256 vaultID) {
@@ -110,18 +110,17 @@ contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
         return uint256(price);
     }
 
-    function calculateCollateralProperties(uint256 _collateral, uint256 _debt) private view returns (uint256, uint256) {
-
+    function calculateCollateralProperties(uint256 collateral, uint256 debt) private view returns (uint256, uint256) {
         assert(getEthPriceSource() != 0);
         assert(getTokenPriceSource() != 0);
 
-        uint256 collateralValue = _collateral.mul(getEthPriceSource()).mul(10**(uint256(mai.decimals()).sub(uint256(collateral.decimals()))));
+        uint256 collateralValue = collateral.mul(getEthPriceSource() );
 
-        assert(collateralValue >= _collateral);
+        assert(collateralValue >= collateral);
 
-        uint256 debtValue = _debt.mul(getTokenPriceSource());
+        uint256 debtValue = debt.mul(getTokenPriceSource());
 
-        assert(debtValue >= _debt);
+        assert(debtValue >= debt);
 
         uint256 collateralValueTimes100 = collateralValue.mul(100);
 
@@ -247,10 +246,10 @@ contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
         if(debtValue==0){
             return 0;
         }
-        
+
         uint256 collateralPercentage = collateralValueTimes100.div(debtValue);
 
-        debtValue = debtValue.div(10 ** priceSourceDecimals);
+        debtValue = debtValue.div(10 ** collateralDecimals);
 
         uint256 halfDebt = debtValue.div(debtRatio); //debtRatio (2)
 
@@ -286,7 +285,7 @@ contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
 
     function checkLiquidation(uint256 vaultID) public view returns (bool) {
         require(_exists(vaultID), "Vault does not exist");
-        
+
         if(vaultCollateral[vaultID] == 0 || vaultDebt[vaultID]==0){
             return false;
         }
@@ -312,7 +311,7 @@ contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
 
         require(collateralPercentage < _minimumCollateralPercentage, "Vault is not below minimum collateral percentage");
 
-        debtValue = debtValue.div(10 ** priceSourceDecimals);
+        debtValue = debtValue.div(10 ** collateralDecimals);
 
         uint256 halfDebt = debtValue.div(debtRatio); //debtRatio (2)
 
@@ -326,7 +325,7 @@ contract erc20Stablecoin is ReentrancyGuard, VaultNFTv3 {
         vaultDebt[vaultID] = vaultDebt[vaultID].sub(halfDebt); // we paid back half of its debt.
 
         uint256 _closingFee = (halfDebt.mul(closingFee).mul(getTokenPriceSource()) ).div(getEthPriceSource().mul(10000));
-     
+
         vaultCollateral[vaultID]=vaultCollateral[vaultID].sub(_closingFee);
         vaultCollateral[treasury]=vaultCollateral[treasury].add(_closingFee);
 
