@@ -1,4 +1,5 @@
 pragma solidity 0.5.16;
+pragma experimental ABIEncoderV2;
 
 import "./interfaces/ILendingPool.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -19,17 +20,13 @@ contract camZapper is Ownable, Pausable {
         erc20QiStablecoin camTokenVault;
     }
 
+    mapping (bytes32 => CamChain) private _chainWhiteList;
+
     ILendingPool aavePolyPool = ILendingPool(0x8dFf5E27EA6b7AC08EbFdf9eB090F32ee9a30fcf);
 
     event AssetZapped(address indexed asset, uint256 indexed amount, uint256 vaultId);
 
-    function camZapToVault(uint256 amount, uint256 vaultIndex, address _asset, address _amAsset, address _camAsset, address _camAssetVault) public whenNotPaused returns (uint256) {
-        CamChain memory chain;
-        chain.asset = IERC20(_asset);
-        chain.amToken = IERC20(_amAsset);
-        chain._camToken = camToken(_camAsset);
-        chain.camTokenVault = erc20QiStablecoin(_camAssetVault);
-
+    function _camZapToVault(uint256 amount, uint256 vaultIndex, CamChain memory chain) internal whenNotPaused returns (uint256) {
         require(amount > 0, "You need to deposit at least some tokens");
 
         uint256 allowance = chain.asset.allowance(msg.sender, address(this));
@@ -37,8 +34,10 @@ contract camZapper is Ownable, Pausable {
 
         chain.asset.transferFrom(msg.sender, address(this), amount);
         chain.asset.approve(address(aavePolyPool), amount);
+
         aavePolyPool.deposit(address(chain.asset), amount, address(this), 0);
         chain.amToken.approve(address(chain._camToken), amount);
+
         chain._camToken.enter(amount);
         uint256 camTokenBal = chain._camToken.balanceOf(address(this));
 
@@ -51,7 +50,6 @@ contract camZapper is Ownable, Pausable {
                 abi.encode(msg.sender, vaultIndex) // This encodes the parameter we want to pass to the function
             )
         );
-
 
         //Check if the zapper has at least one vault, if not we create it for them
         if(success){
@@ -75,8 +73,41 @@ contract camZapper is Ownable, Pausable {
         return chain._camToken.balanceOf(msg.sender);
     }
 
-    function camZap(uint256 amount, address _asset, address _amAsset, address _camAsset, address _camAssetVault) public returns (uint256){
-        return camZapToVault(amount, 0, _asset, _amAsset, _camAsset, _camAssetVault);
+    function _buildCamChain(address _asset, address _amAsset, address _camAsset, address _camAssetVault) internal returns (CamChain memory){
+        CamChain memory chain;
+        chain.asset = IERC20(_asset);
+        chain.amToken = IERC20(_amAsset);
+        chain._camToken = camToken(_camAsset);
+        chain.camTokenVault = erc20QiStablecoin(_camAssetVault);
+        return chain;
+    }
+
+    function _hashCamChain(CamChain memory chain) internal returns (bytes32){
+        return keccak256(
+            abi.encodePacked(address(chain.asset) , address(chain.amToken), address(chain._camToken), address(chain.camTokenVault)));
+    }
+
+    function isWhiteListed(CamChain memory chain) public returns (bool){
+        return address(_chainWhiteList[_hashCamChain(chain)].asset) != address(0x0);
+    }
+
+    function addChainToWhiteList(address _asset, address _amAsset, address _camAsset, address _camAssetVault) public onlyOwner {
+        CamChain memory chain = _buildCamChain(_asset, _amAsset, _camAsset, _camAssetVault);
+        if(!isWhiteListed(chain)){
+            _chainWhiteList[_hashCamChain(chain)] = chain;
+        } else {
+            revert("Chain already in White List");
+        }
+    }
+
+    function removeChainFromWhiteList(address _asset, address _amAsset, address _camAsset, address _camAssetVault) public onlyOwner {
+        CamChain memory chain = _buildCamChain(_asset, _amAsset, _camAsset, _camAssetVault);
+
+        if(isWhiteListed(chain)){
+            delete _chainWhiteList[_hashCamChain(chain)];
+        } else {
+            revert("Chain not in white List");
+        }
     }
 
     function pauseZapping() public onlyOwner {
@@ -86,5 +117,18 @@ contract camZapper is Ownable, Pausable {
     function resumeZapping() public onlyOwner {
         unpause();
     }
+
+    function camZapToVault(uint256 amount, uint256 vaultIndex, address _asset, address _amAsset, address _camAsset, address _camAssetVault) public whenNotPaused returns (uint256) {
+        CamChain memory chain = _buildCamChain(_asset, _amAsset, _camAsset, _camAssetVault);
+        require(isWhiteListed(chain), "camToken chain not in on allowable list");
+        return _camZapToVault(amount, vaultIndex, chain);
+    }
+
+    function camZap(uint256 amount, address _asset, address _amAsset, address _camAsset, address _camAssetVault) internal returns (uint256){
+        CamChain memory chain = _buildCamChain(_asset, _amAsset, _camAsset, _camAssetVault);
+        require(isWhiteListed(chain), "camToken chain not in on allowable list");
+        return _camZapToVault(amount, 0, chain);
+    }
+
 
 }

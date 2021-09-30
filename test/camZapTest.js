@@ -51,6 +51,8 @@ describe("My Dapp", function () {
               "0x4920184F60221a75Abf39BB0b4D06ac25D9b2bb2", //VaultMetaRegistry
               "" //BaseUri, which is empty in deployed code
             )
+
+            await zapper.addChainToWhiteList(token.address, amToken.address, camToken.address, vault.address)
         })
 
 
