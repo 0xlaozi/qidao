@@ -1,4 +1,5 @@
 const { ethers } = require("hardhat");
+const path = require("path");
 const chai  = require("chai");
 const {assert, expect}  = require("chai");
 chai.use(require('chai-as-promised'))
@@ -9,12 +10,11 @@ describe("My Dapp", function () {
         let camTokenFactory, camZapperFactory, erc20Factory, erc20StablecoinVaultFactory, priceSource;
 
         it("Should setup required contract factories", async () => {
-            camTokenFactory = await ethers.getContractFactory("contracts\\camToken.sol:camToken")
-            camZapperFactory  = await ethers.getContractFactory("contracts\\camZapper.sol:camZapper");
-            erc20Factory = await ethers.getContractFactory("contracts\\simpleErc20.sol:simpleErc20")
+            camTokenFactory = await ethers.getContractFactory(path.join("contracts","camToken.sol:camToken"))
+            camZapperFactory  = await ethers.getContractFactory(path.join("contracts","camZapper.sol:camZapper"))
+            erc20Factory = await ethers.getContractFactory(path.join("contracts","simpleErc20.sol:simpleErc20"))
             erc20StablecoinVaultFactory = await ethers.getContractFactory("erc20Stablecoin");
             priceSource = await ethers.getContractAt("PriceSource", "0x0fda41a1d4555b85021312b765c6d519b9c66f93");
-
         });
 
         let token, amToken, camToken, mimatic, vault, zapper,
@@ -55,9 +55,6 @@ describe("My Dapp", function () {
             await zapper.addChainToWhiteList(token.address, amToken.address, camToken.address, vault.address)
         })
 
-
-
-
         let wethAccountSigner, deployerAccount;
         it('Should impersonate the weth holder account and fetch deployer account', async () => {
             await ethers.provider.send('hardhat_impersonateAccount', [wethAccountAddress])
@@ -84,7 +81,6 @@ describe("My Dapp", function () {
         });
 
         it("Should Zap the funds into the Vault", async function () {
-
             const zapAmount = preZapTokenBal.div(2);
             await zapper.camZapToVault(zapAmount, 0, token.address, amToken.address, camToken.address, vault.address);
 
@@ -113,6 +109,19 @@ describe("My Dapp", function () {
               "vault collateral should be about 99.5% of the deposited balance");
             assert.equal(parseFloat(postZapTokenBal), 0, "sender token balance should be 0 after zapping")
 
+        });
+
+        it("Should UnZap the funds out of the Vault", async function () {
+            let vaultIdx = await vault.tokenOfOwnerByIndex(deployerAccount.address,0);
+            let halfCollat = (await vault.vaultCollateral(vaultIdx)).div(2);
+            await vault.approve(zapper.address, vaultIdx)
+            await zapper.camZapFromVault(halfCollat, 0, token.address, amToken.address, camToken.address, vault.address);
+
+            assert.approximately(parseFloat(ethers.utils.formatUnits(await token.balanceOf(deployerAccount.address))),
+              parseFloat(ethers.utils.formatUnits(halfCollat)) * 1.005,
+              0.01,
+              "token balance should be about 100.5% of the unzapped collateral balance");
+            assert.equal(parseFloat(ethers.utils.formatUnits(await vault.vaultCollateral(vaultIdx))), parseFloat(ethers.utils.formatUnits(halfCollat)), "should leave some in the vault after zapping")
         });
 
     }).timeout(1000000);
