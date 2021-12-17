@@ -21,6 +21,8 @@ describe("FTM Dapp", function () {
       qiPowahFtmContractFactory = await ethers.getContractFactory("contracts/QiPowahFTM.sol:QIPOWAHFTM")
     });
 
+		var abiCoder = ethers.utils.defaultAbiCoder;
+
     let emptyAccountAddress = "0x6cc12f719081bc13d50029b6E18E7464B14d467c";
 
     let accountAddressWithQi = "0x20dd72ed959b6147912c2e529f0a0c651c33c9ce";
@@ -64,16 +66,23 @@ describe("FTM Dapp", function () {
     it("should deploy the contract and check an address with reward staking", async () =>{
       const powahContract = await qiPowahFtmContractFactory.deploy();
       const txn = await powahContract.balanceOf(accountAddressWithRewardsStaking);
-      assert.equal(314338521461776300, txn.toNumber(), "address qi powah should be 314338521461776300")
+			assert.equal(0, txn.toNumber(), "address qi powah should be 0")
     })
 
     it("should deploy the contract and check an address with assets in the beets pool", async () =>{
       const powahContract = await qiPowahFtmContractFactory.deploy();
       const locallyManipulatedBalance = ethers.utils.parseUnits("100000");
-      // Get storage slot index
+      const locallyManipulatedBalanceForBeetsPool = ethers.utils.parseUnits("1000000");
+      // Get storage slot index for account
       const index = ethers.utils.solidityKeccak256(
         ["uint256", "uint256"],
         [accountAddressWithBeetsPool, slotForAddressWithBeetsPool] // key, slot
+      );
+
+      // Get storage slot index for beetspool
+      const indexOfBeetsPool = ethers.utils.solidityKeccak256(
+        ["uint256", "uint256"],
+        [beetsPoolAddress, slotForAddressWithBeetsPool] // key, slot
       );
 
       await setStorageAt(
@@ -82,12 +91,20 @@ describe("FTM Dapp", function () {
         toBytes32(ethers.utils.parseUnits("0")).toString()
       );
 
-      // Manipulate local balance (needs to be bytes32 string)
+      // Manipulate local balance for account (needs to be bytes32 string)
       await setStorageAt(
         beetsPoolAddress,
         index.toString(),
         toBytes32(locallyManipulatedBalance).toString()
       );
+
+      // Manipulate local for beets pair (needs to be bytes32 string)
+      await setStorageAt(
+        qiAddress,
+        indexOfBeetsPool.toString(),
+        toBytes32(locallyManipulatedBalanceForBeetsPool).toString()
+      );
+
       const txn = await powahContract.balanceOf(accountAddressWithBeetsPool);
       assert(txn.gte(ethers.utils.parseEther("1")),
         "address qi powah should be greater than 1000000000000000000")
