@@ -40,14 +40,6 @@ contract QIPOWAHFTM {
         return poolTokenBalance;
     }
 
-    function calculateBalancerPoolBalance(bytes32 poolId, IERC20 token, address user) public view returns (uint256) {
-        (address pool_address, ) = vault.getPool(poolId);
-        uint256 poolQiBalance = calculateBalancerPoolTokenSupply(poolId, token);
-        return IERC20(pool_address).balanceOf(user).mul(poolQiBalance).div(IERC20(pool_address).totalSupply());
-        /*     userShare = pool.balanceOf(userAddress) / pool.totalSupply()
-        userQiBalance = userShare * poolQiBalance */
-    }
-
     function balanceOf(address owner) public view returns (uint256) {
         IMasterChef chef = IMasterChef(0x230917f8a262bF9f2C3959eC495b11D1B7E1aFfC); // rewards/staking contract
         IERC20 beetsPair = IERC20(0x7aE6A223cde3A17E0B95626ef71A2DB5F03F540A); //Qi-miMatic beets pair
@@ -72,7 +64,6 @@ contract QIPOWAHFTM {
             lp_powah = lp_totalQi.mul(lp_balance).div(beetsPair.totalSupply());
         }
 
-        qi_powah = qi_powah.add(calculateBalancerPoolBalance(beetsPoolId, qi, owner));
         qi_powah = qi_powah.add(chef.pending(0, owner)); // Unclaimed reward Qi from USDC-miMatic
         qi_powah = qi_powah.add(chef.pending(1, owner)); // Unclaimed reward Qi from WFTM-Qi
 
