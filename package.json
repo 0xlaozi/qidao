@@ -4,7 +4,7 @@
     "@poanet/solidity-flattener": "^3.0.6",
     "dotenv": "^8.2.0",
     "global": "^4.4.0",
-    "hardhat": "^2.1.2",
+    "hardhat": "^2.8.0",
     "hardhat-typechain": "^0.3.5",
     "truffle": "^5.2.6"
   },
