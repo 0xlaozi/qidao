@@ -279,6 +279,15 @@ userQiBalance = userShare * poolQiBalance */
       )
     );
 
+    // QI - DAI
+    qi_powah = qi_powah.add(
+      calculateBalanceInPair(
+        0xe7519Be0E2A4450815858343ca480d1939bE7281,
+        qi,
+        owner
+      )
+    );
+
     // sushi pairs
     // wmatic-qi
     qi_powah = qi_powah.add(
