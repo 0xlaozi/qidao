@@ -31,11 +31,13 @@ contract beefyZapper is Ownable, Pausable {
         chain.asset.transferFrom(msg.sender, address(this), amount);
 
         chain.asset.approve(address(chain.mooToken), amount);
+        uint256 originalMooTokenBal = chain.mooToken.balanceOf(address(this));
         chain.mooToken.deposit(amount);
-        uint256 mooTokenBal = chain.mooToken.balanceOf(address(this));
+        uint256 postDepositMooTokenBal = chain.mooToken.balanceOf(address(this));
+        uint256 mooTokenBalToZap = postDepositMooTokenBal.sub(originalMooTokenBal);
 
-        chain.mooToken.approve(address(chain.mooTokenVault), mooTokenBal);
-        chain.mooTokenVault.depositCollateral(vaultId, mooTokenBal);
+        chain.mooToken.approve(address(chain.mooTokenVault), mooTokenBalToZap);
+        chain.mooTokenVault.depositCollateral(vaultId, mooTokenBalToZap);
         emit AssetZapped(address(chain.asset), amount, vaultId);
         return chain.mooToken.balanceOf(msg.sender);
     }
