@@ -21,11 +21,12 @@ contract beefyZapper is Ownable, Pausable {
 
     event AssetZapped(address indexed asset, uint256 indexed amount, uint256 vaultId);
 
-    function _beefyZapToVault(uint256 amount, uint256 vaultIndex, MooChain memory chain) internal whenNotPaused returns (uint256) {
+    function _beefyZapToVault(uint256 amount, uint256 vaultId, MooChain memory chain) internal whenNotPaused returns (uint256) {
         require(amount > 0, "You need to deposit at least some tokens");
 
         uint256 allowance = chain.asset.allowance(msg.sender, address(this));
         require(allowance >= amount, "Check the token allowance");
+        require(chain.mooTokenVault.exists(vaultId), "VaultId provided doesn't exist");
 
         chain.asset.transferFrom(msg.sender, address(this), amount);
 
@@ -33,24 +34,9 @@ contract beefyZapper is Ownable, Pausable {
         chain.mooToken.deposit(amount);
         uint256 mooTokenBal = chain.mooToken.balanceOf(address(this));
 
-       //Pre 0.6.0 Solidity Try-Catch via
-       //https://ethereum.stackexchange.com/questions/78562/is-it-possible-to-perform-a-try-catch-in-solidity/78563
-        (bool success, bytes memory returnData) = address(chain.mooTokenVault).call(// This creates a low level call to the token
-            abi.encodePacked(// This encodes the function to call and the parameters to pass to that function
-                chain.mooTokenVault.tokenOfOwnerByIndex.selector, // This is the function identifier of the function we want to call
-                abi.encode(msg.sender, vaultIndex) // This encodes the parameter we want to pass to the function
-        ));
-
-            //Check if the zapper has at least one vault, if not we create it for them
-        if (success){
-            uint256 vaultId = abi.decode(returnData, (uint256));
-            chain.mooToken.approve(address(chain.mooTokenVault), mooTokenBal);
-            chain.mooTokenVault.depositCollateral(vaultId, mooTokenBal);
-            emit AssetZapped(address(chain.asset), amount, vaultId);
-        }
-        else {
-            revert("Could not locate the vaultId provided");
-        }
+        chain.mooToken.approve(address(chain.mooTokenVault), mooTokenBal);
+        chain.mooTokenVault.depositCollateral(vaultId, mooTokenBal);
+        emit AssetZapped(address(chain.asset), amount, vaultId);
         return chain.mooToken.balanceOf(msg.sender);
     }
 
@@ -97,10 +83,10 @@ contract beefyZapper is Ownable, Pausable {
         unpause();
     }
 
-    function beefyZapToVault(uint256 amount, uint256 vaultIndex, address _asset, address _mooAsset, address _mooAssetVault) public whenNotPaused returns (uint256) {
+    function beefyZapToVault(uint256 amount, uint256 vaultId, address _asset, address _mooAsset, address _mooAssetVault) public whenNotPaused returns (uint256) {
         MooChain memory chain = _buildMooChain(_asset, _mooAsset, _mooAssetVault);
         require(isWhiteListed(chain), "mooToken chain not in on allowable list");
-        return _beefyZapToVault(amount, vaultIndex, chain);
+        return _beefyZapToVault(amount, vaultId, chain);
     }
 
 }
