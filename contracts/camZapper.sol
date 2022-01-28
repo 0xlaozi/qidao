@@ -11,7 +11,6 @@ import "./camToken.sol";
 import "./erc20Stablecoin/erc20QiStablecoin.sol";
 import "./interfaces/IAToken.sol";
 
-
 contract camZapper is Ownable, Pausable, IERC721Receiver {
     using SafeMath for uint256;
 
@@ -29,7 +28,7 @@ contract camZapper is Ownable, Pausable, IERC721Receiver {
     event AssetZapped(address indexed asset, uint256 indexed amount, uint256 vaultId);
     event AssetUnZapped(address indexed asset, uint256 indexed amount, uint256 vaultId);
 
-    function _camZapToVault(uint256 amount, uint256 vaultIndex, CamChain memory chain) internal whenNotPaused returns (uint256) {
+    function _camZapToVault(uint256 amount, uint256 vaultId, CamChain memory chain) internal whenNotPaused returns (uint256) {
         require(amount > 0, "You need to deposit at least some tokens");
 
         uint256 allowance = chain.asset.allowance(msg.sender, address(this));
@@ -44,78 +43,40 @@ contract camZapper is Ownable, Pausable, IERC721Receiver {
         chain._camToken.enter(amount);
         uint256 camTokenBal = chain._camToken.balanceOf(address(this));
 
-        //Pre 0.6.0 Solidity Try-Catch via
-        //https://ethereum.stackexchange.com/questions/78562/is-it-possible-to-perform-a-try-catch-in-solidity/78563
-        (bool success, bytes memory returnData) =
-        address(chain.camTokenVault).call( // This creates a low level call to the token
-            abi.encodePacked( // This encodes the function to call and the parameters to pass to that function
-                chain.camTokenVault.tokenOfOwnerByIndex.selector , // This is the function identifier of the function we want to call
-                abi.encode(msg.sender, vaultIndex) // This encodes the parameter we want to pass to the function
-            )
-        );
-
-        //Check if the zapper has at least one vault, if not we create it for them
-        if(success){
-            uint256 vaultId =  abi.decode(returnData, (uint256));
+        if(vaultId == 0){
+            chain.asset.transferFrom(address(this), msg.sender, camTokenBal);
+            emit AssetZapped(address(chain.asset), amount, vaultId);
+        } else {
             chain._camToken.approve(address(chain.camTokenVault), camTokenBal);
             chain.camTokenVault.depositCollateral(vaultId, camTokenBal);
             emit AssetZapped(address(chain.asset), amount, vaultId);
         }
-        else {
-            //BUT we only create it if the vault they are looking for is the first one
-            if(vaultIndex == 0){
-                uint256 vaultId = chain.camTokenVault.createVault();
-                chain._camToken.approve(address(chain.camTokenVault), camTokenBal);
-                chain.camTokenVault.depositCollateral(vaultId, camTokenBal);
-                chain.camTokenVault.safeTransferFrom(address(this), (msg.sender), vaultId);
-                emit AssetZapped(address(chain.asset), amount, vaultId);
-            } else {
-                revert("Could not locate the vaultId provided");
-            }
-        }
-        return chain._camToken.balanceOf(msg.sender);
+
+        return camTokenBal;
     }
 
-    function _camZapFromVault(uint256 amount, uint256 vaultIndex, CamChain memory chain) internal whenNotPaused returns (uint256) {
+    function _camZapFromVault(uint256 amount, uint256 vaultId, CamChain memory chain) internal whenNotPaused returns (uint256) {
         require(amount > 0, "You need to withdraw at least some tokens");
-        require(chain.camTokenVault.getApproved(vaultIndex) == address(this), "Need to have approval");
+        require(chain.camTokenVault.getApproved(vaultId) == address(this), "Need to have approval");
+        require(chain.camTokenVault.ownerOf(vaultId) == msg.sender, "You can only zap out of vaults you own");
 
-        //Pre 0.6.0 Solidity Try-Catch via
-        //https://ethereum.stackexchange.com/questions/78562/is-it-possible-to-perform-a-try-catch-in-solidity/78563
-        (bool success, bytes memory returnData) =
-        address(chain.camTokenVault).call(// This creates a low level call to the token
-            abi.encodePacked(// This encodes the function to call and the parameters to pass to that function
-                chain.camTokenVault.tokenOfOwnerByIndex.selector, // This is the function identifier of the function we want to call
-                abi.encode(msg.sender, vaultIndex) // This encodes the parameter we want to pass to the function
-            )
-        );
+        chain._camToken.approve(address(chain.camTokenVault), amount);
+        chain.camTokenVault.safeTransferFrom(msg.sender, address(this), vaultId);
 
-        uint256 vaultId;
-        if (success) {
-            vaultId = abi.decode(returnData, (uint256));
-            require(chain.camTokenVault.ownerOf(vaultId) == msg.sender, "You can only zap out of vaults you own");
+        uint256 camTokenBalanceBeforeWithdraw = chain._camToken.balanceOf(address(this));
+        chain.camTokenVault.withdrawCollateral(vaultId, amount);
+        uint256 camTokenBalanceToUnzap = chain._camToken.balanceOf(address(this)).sub(camTokenBalanceBeforeWithdraw);
 
-            chain._camToken.approve(address(chain.camTokenVault), amount);
-            chain.camTokenVault.safeTransferFrom(msg.sender, address(this), vaultIndex);
+        chain.camTokenVault.approve(msg.sender, vaultId);
+        chain.camTokenVault.safeTransferFrom(address(this), msg.sender, vaultId);
 
-            require(chain._camToken.balanceOf(address(this)) == 0, "Existing camToken balance before transfer");
-            chain.camTokenVault.withdrawCollateral(vaultId, amount);
+        uint256 amTokenBalanceBeforeWithdraw = chain.amToken.balanceOf(address(this));
+        chain._camToken.leave(camTokenBalanceToUnzap);
+        uint256 amTokenBalanceToUnzap = chain.amToken.balanceOf(address(this)).sub(amTokenBalanceBeforeWithdraw);
 
-            chain.camTokenVault.approve(msg.sender, vaultId);
-            chain.camTokenVault.safeTransferFrom(address(this), msg.sender, vaultIndex);
-        } else {
-            revert("Could not locate the vaultId provided");
-        }
+        chain.amToken.approve(address(aavePolyPool), amTokenBalanceToUnzap);
+        aavePolyPool.withdraw(address(chain.asset), amTokenBalanceToUnzap, msg.sender);
 
-        require(chain.amToken.balanceOf(address(this)) == 0, "Existing amToken balance before transfer");
-        chain._camToken.leave(chain._camToken.balanceOf(address(this)));
-
-        uint256 amTokenBalance = chain.amToken.balanceOf(address(this));
-        chain.amToken.approve(address(aavePolyPool), amTokenBalance);
-        aavePolyPool.withdraw(address(chain.asset), amTokenBalance, msg.sender);
-
-        require(chain.amToken.balanceOf(address(this)) == 0, "Existing amToken balance after cleanup");
-        require(chain._camToken.balanceOf(address(this)) == 0, "Existing camToken balance after cleanup");
 
         emit AssetUnZapped(address(chain.asset), amount, vaultId);
         return chain.asset.balanceOf(msg.sender);
@@ -166,28 +127,16 @@ contract camZapper is Ownable, Pausable, IERC721Receiver {
         unpause();
     }
 
-    function camZapToVault(uint256 amount, uint256 vaultIndex, address _asset, address _amAsset, address _camAsset, address _camAssetVault) public whenNotPaused returns (uint256) {
+    function camZapToVault(uint256 amount, uint256 vaultId, address _asset, address _amAsset, address _camAsset, address _camAssetVault) public whenNotPaused returns (uint256) {
         CamChain memory chain = _buildCamChain(_asset, _amAsset, _camAsset, _camAssetVault);
         require(isWhiteListed(chain), "camToken chain not in on allowable list");
-        return _camZapToVault(amount, vaultIndex, chain);
+        return _camZapToVault(amount, vaultId, chain);
     }
 
-    function camZapFromVault(uint256 amount, uint256 vaultIndex, address _asset, address _amAsset, address _camAsset, address _camAssetVault) public whenNotPaused returns (uint256) {
+    function camZapFromVault(uint256 amount, uint256 vaultId, address _asset, address _amAsset, address _camAsset, address _camAssetVault) public whenNotPaused returns (uint256) {
         CamChain memory chain = _buildCamChain(_asset, _amAsset, _camAsset, _camAssetVault);
         require(isWhiteListed(chain), "camToken chain not in on allowable list");
-        return _camZapFromVault(amount, vaultIndex, chain);
-    }
-
-    function camZap(uint256 amount, address _asset, address _amAsset, address _camAsset, address _camAssetVault) internal returns (uint256){
-        CamChain memory chain = _buildCamChain(_asset, _amAsset, _camAsset, _camAssetVault);
-        require(isWhiteListed(chain), "camToken chain not in on allowable list");
-        return _camZapToVault(amount, 0, chain);
-    }
-
-    function camZapOut(uint256 amount, address _asset, address _amAsset, address _camAsset, address _camAssetVault) internal returns (uint256){
-        CamChain memory chain = _buildCamChain(_asset, _amAsset, _camAsset, _camAssetVault);
-        require(isWhiteListed(chain), "camToken chain not in on allowable list");
-        return _camZapFromVault(amount, 0, chain);
+        return _camZapFromVault(amount, vaultId, chain);
     }
 
     function onERC721Received(address operator, address from, uint256 tokenId, bytes memory data) public returns (bytes4) {

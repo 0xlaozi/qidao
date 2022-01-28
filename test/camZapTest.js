@@ -1,13 +1,13 @@
 const { ethers } = require("hardhat");
 const path = require("path");
 const chai  = require("chai");
-const {assert, expect}  = require("chai");
+const {assert}  = require("chai");
 chai.use(require('chai-as-promised'))
 
 
 describe("My Dapp", function () {
     describe("YourContract", function () {
-        let camTokenFactory, camZapperFactory, erc20Factory, erc20StablecoinVaultFactory, priceSource;
+        let camTokenFactory, camZapperFactory, erc20Factory, erc20StablecoinVaultFactory, priceSource, vaultId;
 
         it("Should setup required contract factories", async () => {
             camTokenFactory = await ethers.getContractFactory(path.join("contracts","camToken.sol:camToken"))
@@ -53,6 +53,8 @@ describe("My Dapp", function () {
             )
 
             await zapper.addChainToWhiteList(token.address, amToken.address, camToken.address, vault.address)
+
+            await vault.createVault();
         })
 
         let wethAccountSigner, deployerAccount;
@@ -75,53 +77,36 @@ describe("My Dapp", function () {
             await token.approve(zapper.address, preZapTokenBal);
         })
 
-        it("Should fail to zap into a vault that doesn't exist if that vaultId isn't 0", async () => {
-            await expect(zapper.camZapToVault(preZapTokenBal, 1, token.address, amToken.address, camToken.address, vault.address))
-              .to.be.rejectedWith(Error);
-        });
-
         it("Should Zap the funds into the Vault", async function () {
             const zapAmount = preZapTokenBal.div(2);
-            await zapper.camZapToVault(zapAmount, 0, token.address, amToken.address, camToken.address, vault.address);
+            await vault.createVault();
+            vaultId = await vault.tokenOfOwnerByIndex(deployerAccount.address, 1);
+            await zapper.camZapToVault(zapAmount, vaultId, token.address, amToken.address, camToken.address, vault.address);
 
             let postZapTokenBal = ethers.utils.formatUnits(await token.balanceOf(deployerAccount.address))
-            let vaultIdx = await vault.tokenOfOwnerByIndex(deployerAccount.address,0);
-            let vaultColat = parseFloat(ethers.utils.formatUnits(await vault.vaultCollateral(vaultIdx)));
+            let vaultColat = parseFloat(ethers.utils.formatUnits(await vault.vaultCollateral(vaultId)));
 
             assert.approximately(vaultColat,
               parseFloat(ethers.utils.formatUnits(zapAmount)) * 0.995,
-              0.01,
+              0.1,
               "vault collateral should be about 99.5% of the deposited balance");
             assert.equal(parseFloat(postZapTokenBal), ethers.utils.formatUnits(zapAmount), "sender token balance should be 0 after zapping")
         });
 
-        it("Should zap funds into vault 0 if it already exists", async function () {
-            const zapAmount = await token.balanceOf(deployerAccount.address);
-            await zapper.camZapToVault(zapAmount, 0, token.address, amToken.address, camToken.address, vault.address);
-
-            let postZapTokenBal = ethers.utils.formatUnits(await token.balanceOf(deployerAccount.address))
-            let vaultIdx = await vault.tokenOfOwnerByIndex(deployerAccount.address,0);
-            let vaultColat = parseFloat(ethers.utils.formatUnits(await vault.vaultCollateral(vaultIdx)));
-
-            assert.approximately(vaultColat,
-              parseFloat(ethers.utils.formatUnits(preZapTokenBal)) * 0.995,
-              0.01,
-              "vault collateral should be about 99.5% of the deposited balance");
-            assert.equal(parseFloat(postZapTokenBal), 0, "sender token balance should be 0 after zapping")
-
-        });
-
         it("Should UnZap the funds out of the Vault", async function () {
-            let vaultIdx = await vault.tokenOfOwnerByIndex(deployerAccount.address,0);
-            let halfCollat = (await vault.vaultCollateral(vaultIdx)).div(2);
-            await vault.approve(zapper.address, vaultIdx)
-            await zapper.camZapFromVault(halfCollat, 0, token.address, amToken.address, camToken.address, vault.address);
+            const preZapOutTokenBal = await token.balanceOf(deployerAccount.address);
+            vaultId = await vault.tokenOfOwnerByIndex(deployerAccount.address,1);
+            let halfCollat = (await vault.vaultCollateral(vaultId)).div(2);
+            await vault.approve(zapper.address, vaultId)
+            console.log({halfCollat , vaultId})
+            await zapper.camZapFromVault(halfCollat, vaultId, token.address, amToken.address, camToken.address, vault.address);
+
 
             assert.approximately(parseFloat(ethers.utils.formatUnits(await token.balanceOf(deployerAccount.address))),
-              parseFloat(ethers.utils.formatUnits(halfCollat)) * 1.005,
+              parseFloat(ethers.utils.formatUnits(halfCollat.add(preZapOutTokenBal))) * 1.005,
               0.01,
               "token balance should be about 100.5% of the unzapped collateral balance");
-            assert.equal(parseFloat(ethers.utils.formatUnits(await vault.vaultCollateral(vaultIdx))), parseFloat(ethers.utils.formatUnits(halfCollat)), "should leave some in the vault after zapping")
+            assert.equal(parseFloat(ethers.utils.formatUnits(await vault.vaultCollateral(vaultId))), parseFloat(ethers.utils.formatUnits(halfCollat)), "should leave some in the vault after zapping")
         });
 
     }).timeout(1000000);
