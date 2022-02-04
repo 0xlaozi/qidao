@@ -82,10 +82,10 @@ describe("Zap Test", function () {
 
       const zapAmount = preZapTokenBal.div(2);
       await vault.createVault();
-      await zapper.beefyZapToVault(zapAmount, 0, link.address, mooScreamToken.address, vault.address);
+      let vaultIdx = await vault.tokenOfOwnerByIndex(deployerAccount.address, 0);
+      await zapper.beefyZapToVault(zapAmount, vaultIdx, link.address, mooScreamToken.address, vault.address);
 
       let postZapTokenBal = ethers.utils.formatUnits(await link.balanceOf(deployerAccount.address))
-      let vaultIdx = await vault.tokenOfOwnerByIndex(deployerAccount.address, 0);
       let vaultColat = parseFloat(ethers.utils.formatUnits(await vault.vaultCollateral(vaultIdx)));
 
       assert.approximately(vaultColat,
@@ -93,6 +93,16 @@ describe("Zap Test", function () {
         4000,
         "vault collateral should be about 99.5% of the deposited balance");
       assert.equal(parseFloat(postZapTokenBal), ethers.utils.formatUnits(zapAmount), "sender token balance should be 0 after zapping")
+    }).timeout(100_000);
+
+    it("Should Zap the funds out of the Vault", async function () {
+      let vaultIdx = await vault.tokenOfOwnerByIndex(deployerAccount.address, 0);
+      let preZapOutCollateralBal = await vault.vaultCollateral(vaultIdx)
+      await vault.approve(zapper.address, vaultIdx)
+      await zapper.beefyZapFromVault(preZapOutCollateralBal, vaultIdx, link.address, mooScreamToken.address, vault.address);
+      let postZapOutVaultCollateralBal = await vault.vaultCollateral(vaultIdx);
+      assert.isTrue(preZapOutCollateralBal.gt(postZapOutVaultCollateralBal))
+      assert.isTrue(postZapOutVaultCollateralBal.eq(0))
     }).timeout(100_000);
 
     it("Should fail to zap into a vault that doesn't exist", async () => {
@@ -175,6 +185,16 @@ describe("Zap Test", function () {
         4000,
         "vault collateral should be about 99.5% of the deposited balance");
       assert.equal(parseFloat(postZapTokenBal), ethers.utils.formatUnits(zapAmount), "sender token balance should be 0 after zapping")
+    }).timeout(100_000);
+
+    it("Should Zap the funds out of the Vault", async function () {
+      let vaultIdx = await vault.tokenOfOwnerByIndex(deployerAccount.address, 0);
+      let preZapOutCollateralBal = await vault.vaultCollateral(vaultIdx)
+      await vault.approve(zapper.address, vaultIdx)
+      await zapper.beefyZapFromVault(preZapOutCollateralBal, 0, WFTM.address, yvToken.address, vault.address);
+      let postZapOutVaultCollateralBal = await vault.vaultCollateral(vaultIdx);
+      assert.isTrue(preZapOutCollateralBal.gt(postZapOutVaultCollateralBal))
+      assert.isTrue(postZapOutVaultCollateralBal.eq(0))
     }).timeout(100_000);
 
     it("Should fail to zap into a vault that doesn't exist", async () => {

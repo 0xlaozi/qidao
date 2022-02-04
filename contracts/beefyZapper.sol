@@ -5,10 +5,11 @@ import "@openzeppelin/contracts/ownership/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/lifecycle/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "./interfaces/IBeefyVault.sol";
 import "./crosschainStablecoin.sol";
 
-contract beefyZapper is Ownable, Pausable {
+contract beefyZapper is Ownable, Pausable, IERC721Receiver {
     using SafeMath for uint256;
 
     struct MooChain {
@@ -20,6 +21,7 @@ contract beefyZapper is Ownable, Pausable {
     mapping (bytes32 => MooChain) private _chainWhiteList;
 
     event AssetZapped(address indexed asset, uint256 indexed amount, uint256 vaultId);
+    event AssetUnZapped(address indexed asset, uint256 indexed amount, uint256 vaultId);
 
     function _beefyZapToVault(uint256 amount, uint256 vaultId, MooChain memory chain) internal whenNotPaused returns (uint256) {
         require(amount > 0, "You need to deposit at least some tokens");
@@ -40,6 +42,37 @@ contract beefyZapper is Ownable, Pausable {
         chain.mooTokenVault.depositCollateral(vaultId, mooTokenBalToZap);
         emit AssetZapped(address(chain.asset), amount, vaultId);
         return chain.mooToken.balanceOf(msg.sender);
+    }
+
+    function _beefyZapFromVault(uint256 amount, uint256 vaultId, MooChain memory chain) internal whenNotPaused returns (uint256) {
+        require(amount > 0, "You need to withdraw at least some tokens");
+        require(chain.mooTokenVault.getApproved(vaultId) == address(this), "Need to have approval");
+        require(chain.mooTokenVault.ownerOf(vaultId) == msg.sender, "You can only zap out of vaults you own");
+
+        //Transfer vault to this contract
+        chain.mooToken.approve(address(chain.mooTokenVault), amount);
+        chain.mooTokenVault.safeTransferFrom(msg.sender, address(this), vaultId);
+
+        //Withdraw funds from vault
+        uint256 mooTokenBalanceBeforeWithdraw = chain.mooToken.balanceOf(address(this));
+        chain.mooTokenVault.withdrawCollateral(vaultId, amount);
+        uint256 mooTokenBalanceToUnzap = chain.mooToken.balanceOf(address(this)).sub(mooTokenBalanceBeforeWithdraw);
+
+        //Return vault to user
+        chain.mooTokenVault.approve(msg.sender, vaultId);
+        chain.mooTokenVault.safeTransferFrom(address(this), msg.sender, vaultId);
+
+        //Withdraw underlying from respective yield bearing asset
+        uint256 tokenBalanceBeforeWithdraw = chain.asset.balanceOf(address(this));
+        chain.mooToken.withdraw(mooTokenBalanceToUnzap);
+        uint256 tokenBalanceToTransfer = chain.asset.balanceOf(address(this)).sub(tokenBalanceBeforeWithdraw);
+
+        //Transfer tokens to user
+        chain.asset.approve(address(this), tokenBalanceToTransfer);
+        chain.asset.transfer(msg.sender, tokenBalanceToTransfer);
+
+        emit AssetUnZapped(address(chain.asset), amount, vaultId);
+        return tokenBalanceToTransfer;
     }
 
     function _buildMooChain(address _asset, address _mooAsset, address _mooAssetVault) internal returns (MooChain memory){
@@ -91,4 +124,13 @@ contract beefyZapper is Ownable, Pausable {
         return _beefyZapToVault(amount, vaultId, chain);
     }
 
+    function beefyZapFromVault(uint256 amount, uint256 vaultId, address _asset, address _mooAsset, address _mooAssetVault) public whenNotPaused returns (uint256) {
+        MooChain memory chain = _buildMooChain(_asset, _mooAsset, _mooAssetVault);
+        require(isWhiteListed(chain), "mooToken chain not in on allowable list");
+        return _beefyZapFromVault(amount, vaultId, chain);
+    }
+
+    function onERC721Received(address operator, address from, uint256 tokenId, bytes memory data) public returns (bytes4) {
+        return this.onERC721Received.selector;
+    }
 }
