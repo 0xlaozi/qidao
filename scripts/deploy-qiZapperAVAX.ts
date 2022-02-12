@@ -1,12 +1,18 @@
-import { ethers } from "hardhat";
+import {ethers, run} from "hardhat";
 async function main() {
 
     let zapperFactory = await ethers.getContractFactory("contracts\\beefyZapper.sol:beefyZapper");
 
+    console.log(`Deploying avaxZapper...`)
     let zapper = await zapperFactory.deploy();
-    console.log(zapper.address)
-    console.log(zapper.deployTransaction.hash)
     await zapper.deployed();
+    console.log(`Zapper deploy at ${zapper.address}`)
+    console.log(`in TX ${zapper.deployTransaction.hash}`)
+    console.log(`Verifying avaxZapper...`)
+    await run("verify:verify", {
+        address: zapper.address,
+    });
+
     let zapChains =
         [
             {
@@ -17,8 +23,10 @@ async function main() {
             }
         ]
 
-    for(let chain of zapChains){
-        await zapper.addChainToWhiteList(chain.underlying , chain.receiptToken, chain.vault);
+    let tx;
+    for (let chain of zapChains) {
+        tx = await zapper.addChainToWhiteList(chain.underlying, chain.receiptToken, chain.vault);
+        tx.wait(20);
         console.log(`Added whitelist for ${chain.vault}`);
     }
     console.log("Done!");
