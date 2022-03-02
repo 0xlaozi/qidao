@@ -434,7 +434,7 @@ userQiBalance = userShare * poolQiBalance */
     uint256 lp_balance4 = QSpair4.balanceOf(owner);
 
     if(lp_stakedBalance4 > 0) {
-      lp_powah = lp_powah.add(lp_totalQi4.mul(lp_balance4).div(QSpair4.totalSupply()));
+      lp_powah = lp_powah.add(lp_totalQi4.mul(lp_stakedBalance4).div(QSpair4.totalSupply()));
     }
 
     // add any unharvested Qi from the qi-mimatic staked pool
