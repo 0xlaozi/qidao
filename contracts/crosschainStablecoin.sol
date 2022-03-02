@@ -6,13 +6,13 @@ import "@openzeppelin/contracts/token/ERC20/ERC20Detailed.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
-import "../oracles/shareOracle.sol";
+import "./PriceSource.sol";
 
-import "../MyVaultV3.sol";
+import "./MyVaultV4.sol";
 
-contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
-    shareOracle public ethPriceSource;
-    
+contract crosschainStablecoin is ReentrancyGuard, VaultNFTv4 {
+    PriceSource public ethPriceSource;
+
     using SafeMath for uint256;
     using SafeERC20 for ERC20Detailed;
 
@@ -37,6 +37,9 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
 
     ERC20Detailed public mai;
 
+    uint256 public priceSourceDecimals;
+    uint256 public totalBorrowed;
+
     event CreateVault(uint256 vaultID, address creator);
     event DestroyVault(uint256 vaultID);
     event TransferVault(uint256 vaultID, address from, address to);
@@ -55,15 +58,14 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         string memory symbol,
         address _mai,
         address _collateral,
-        address meta,
         string memory baseURI
-    ) VaultNFTv3(name, symbol, meta, baseURI) public {
+    ) VaultNFTv4(name, symbol, baseURI) public {
         assert(ethPriceSourceAddress != address(0));
         assert(minimumCollateralPercentage != 0);
-                        //  | decimals start here
+        //  | decimals start here
         closingFee=50; // 0.5%
         openingFee=0; // 0.0%
-        ethPriceSource = shareOracle(ethPriceSourceAddress);
+        ethPriceSource = PriceSource(ethPriceSourceAddress);
         stabilityPool = address(0);
         tokenPeg = 100000000; // $1
 
@@ -74,6 +76,7 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
 
         collateral = ERC20Detailed(_collateral);
         mai = ERC20Detailed(_mai);
+        priceSourceDecimals = 8;
     }
 
     modifier onlyVaultOwner(uint256 vaultID) {
@@ -104,7 +107,7 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
 
     function getEthPriceSource() public view returns (uint256){
         (,int256 price,,,) = ethPriceSource.latestRoundData();
-        return uint256(price); // brings it back to 18.
+        return uint256(price);
     }
 
     function calculateCollateralProperties(uint256 _collateral, uint256 _debt) private view returns (uint256, uint256) {
@@ -112,7 +115,7 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         assert(getEthPriceSource() != 0);
         assert(getTokenPriceSource() != 0);
 
-        uint256 collateralValue = _collateral.mul(getEthPriceSource());
+        uint256 collateralValue = _collateral.mul(getEthPriceSource()).mul(10**(uint256(mai.decimals()).sub(uint256(collateral.decimals()))));
 
         assert(collateralValue >= _collateral);
 
@@ -127,10 +130,10 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         return (collateralValueTimes100, debtValue);
     }
 
-    function isValidCollateral(uint256 _collateral, uint256 debt) private view returns (bool) {
-        (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(_collateral, debt);
+    function isValidCollateral(uint256 collateral, uint256 debt) private view returns (bool) {
+        (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(collateral, debt);
 
-        uint256 collateralPercentage = collateralValueTimes100.mul(10 ** 10).div(debtValue);
+        uint256 collateralPercentage = collateralValueTimes100.div(debtValue);
 
         return collateralPercentage >= _minimumCollateralPercentage;
     }
@@ -206,7 +209,7 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
 
         // mai
         mai.safeTransfer(msg.sender, amount);
-
+        totalBorrowed=totalBorrowed.add(amount);
         emit BorrowToken(vaultID, amount);
     }
 
@@ -214,7 +217,7 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         require(mai.balanceOf(msg.sender) >= amount, "Token balance too low");
         require(vaultDebt[vaultID] >= amount, "Vault debt less than amount to pay back");
 
-        uint256 _closingFee = (amount.mul(closingFee).mul(getTokenPriceSource()) ).div(getEthPriceSource().mul(10000)).div(1000000000);
+        uint256 _closingFee = (amount.mul(closingFee).mul(getTokenPriceSource())).div(getEthPriceSource().mul(10000));
 
         //mai
         mai.safeTransferFrom(msg.sender, address(this), amount);
@@ -223,6 +226,7 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         vaultCollateral[vaultID]=vaultCollateral[vaultID].sub(_closingFee);
         vaultCollateral[treasury]=vaultCollateral[treasury].add(_closingFee);
 
+        totalBorrowed=totalBorrowed.sub(amount);
         emit PayBackToken(vaultID, amount, _closingFee);
     }
 
@@ -244,10 +248,10 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         if(debtValue==0){
             return 0;
         }
-        
+
         uint256 collateralPercentage = collateralValueTimes100.div(debtValue);
 
-        debtValue = debtValue.div(10 ** 8);
+        debtValue = debtValue.div(10 ** priceSourceDecimals);
 
         uint256 halfDebt = debtValue.div(debtRatio); //debtRatio (2)
 
@@ -267,7 +271,7 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         if(halfDebt==0){
             return 0;
         }
-        return halfDebt.mul(gainRatio).div(1000).div(getEthPriceSource()).div(10000000000);
+        return halfDebt.mul(gainRatio).div(1000).div(getEthPriceSource());
     }
 
     function checkCollateralPercentage(uint256 vaultID) public view returns(uint256){
@@ -278,21 +282,17 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         }
         (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(vaultCollateral[vaultID], vaultDebt[vaultID]);
 
-        collateralValueTimes100 = collateralValueTimes100.mul(10 ** 10);
-
         return collateralValueTimes100.div(debtValue);
     }
 
     function checkLiquidation(uint256 vaultID) public view returns (bool) {
         require(_exists(vaultID), "Vault does not exist");
-        
+
         if(vaultCollateral[vaultID] == 0 || vaultDebt[vaultID]==0){
             return false;
         }
 
         (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(vaultCollateral[vaultID], vaultDebt[vaultID]);
-
-        collateralValueTimes100 = collateralValueTimes100.mul(10 ** 10);
 
         uint256 collateralPercentage = collateralValueTimes100.div(debtValue);
 
@@ -308,14 +308,12 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
         require(stabilityPool==address(0) || msg.sender ==  stabilityPool, "liquidation is disabled for public");
 
         (uint256 collateralValueTimes100, uint256 debtValue) = calculateCollateralProperties(vaultCollateral[vaultID], vaultDebt[vaultID]);
-        
-        collateralValueTimes100 = collateralValueTimes100.mul(10 ** 10);
 
         uint256 collateralPercentage = collateralValueTimes100.div(debtValue);
 
         require(collateralPercentage < _minimumCollateralPercentage, "Vault is not below minimum collateral percentage");
 
-        debtValue = debtValue.div(10 ** 8);
+        debtValue = debtValue.div(10 ** priceSourceDecimals);
 
         uint256 halfDebt = debtValue.div(debtRatio); //debtRatio (2)
 
@@ -323,13 +321,14 @@ contract erc20Stablecoincamwbtc is ReentrancyGuard, VaultNFTv3 {
 
         //mai
         mai.safeTransferFrom(msg.sender, address(this), halfDebt);
+        totalBorrowed=totalBorrowed.sub(halfDebt);
 
         uint256 maticExtract = checkExtract(vaultID);
 
         vaultDebt[vaultID] = vaultDebt[vaultID].sub(halfDebt); // we paid back half of its debt.
 
-        uint256 _closingFee = (halfDebt.mul(closingFee).mul(getTokenPriceSource()) ).div(getEthPriceSource().mul(10000)).div(1000000000);
-     
+        uint256 _closingFee = (halfDebt.mul(closingFee).mul(getTokenPriceSource()) ).div(getEthPriceSource().mul(10000));
+
         vaultCollateral[vaultID]=vaultCollateral[vaultID].sub(_closingFee);
         vaultCollateral[treasury]=vaultCollateral[treasury].add(_closingFee);
 

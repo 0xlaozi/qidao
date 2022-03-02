@@ -1,4 +1,3 @@
-
 pragma solidity 0.5.16;
 
 import "@openzeppelin/contracts/ownership/Ownable.sol";
@@ -42,7 +41,7 @@ contract erc20QiStablecoin is erc20Stablecoin, Ownable {
     }
 
     function changeEthPriceSource(address ethPriceSourceAddress) external onlyOwner() {
-        ethPriceSource = PriceSource(ethPriceSourceAddress);
+        ethPriceSource = shareOracle(ethPriceSourceAddress);
     }
 
     function setTokenPeg(uint256 _tokenPeg) external onlyOwner() {

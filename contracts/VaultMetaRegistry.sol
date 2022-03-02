@@ -1,7 +1,7 @@
 pragma solidity 0.5.16;
 
 import "./interfaces/IVaultMetaRegistry.sol";
-import "./Ownable.sol";
+import "@openzeppelin/contracts/ownership/Ownable.sol";
 
 contract VaultMetaRegistry is IVaultMetaRegistry, Ownable {
     mapping (address => address) public _registry;

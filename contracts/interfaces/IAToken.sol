@@ -122,4 +122,6 @@ interface IAToken {
     * @return the total redirected balance
     **/
     function getRedirectedBalance(address _user) external view returns(uint256);
+
+    function approve(address spender, uint256 amount) external returns (bool);
 }
